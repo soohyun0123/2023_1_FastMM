@@ -22,7 +22,7 @@ def make_train_data(filename):
     df = pd.DataFrame(data_list, columns=['x0(block size)', 'x1(mat size)', 'y(latency)'])
     df.to_csv('./data/exp3-1/cost_model_dataframe_0319.csv')
 
-def preprocess_train_data(filter):
+def preprocess_train_data(filter, std, fig_show):
     def _get_dataframe(filename):
         f = open(filename, 'r')
         l = []
@@ -57,19 +57,29 @@ def preprocess_train_data(filter):
         df = _get_dataframe('./data/exp3-3/' + filename)
         mat_size = int(filename.strip('.txt').split('_')[-1])
         #_plot_with_block_size(df, mat_size, fig_save=1)
-        x, y = np.array(df['Block size']), np.array(df['Time elapsed[sec]'])
+        x, y_origin = np.array(df['Block size']), np.array(df['Time elapsed[sec]'])
         if filter:
-            y = gaussian_filter1d(y, 2)
+            y = np.hstack((y_origin[:4], gaussian_filter1d(y_origin[4:], std)))
+        else:
+            y = y_origin
         m = np.ones(len(x)) * mat_size
         x, y, m = x.reshape(-1, 1), y.reshape(-1, 1), m.reshape(-1, 1)
         cur = np.hstack((m, x, y))
+        if fig_show:
+            plt.figure()
+            plt.plot(x, y_origin, label='original data', color='blue')
+            plt.plot(x, y, label='filtered data', color='skyblue')
+            plt.title('Mat size ' + str(mat_size))
+            plt.legend()
+            plt.show()
         if is_first:
             training_data_arr = cur
             is_first = False
         else:
             training_data_arr = np.vstack((training_data_arr, cur))
-    df = pd.DataFrame(training_data_arr)
-    print(df[:10])
+    df = pd.DataFrame(training_data_arr, columns=['x1(mat size)', 'x0(block size)', 'y(latency)'])
+    df.to_csv('./data/exp3-3/cost_model_training_data_0326.csv')
+
 
 def curve_simple(X, p0, p1) :
     """
@@ -97,8 +107,8 @@ def curve_ver2(X, p0, p1, p2, p3, p4) :
     cost_total = cost_comp + cost_balance + cost_sched + p4
     return cost_total
 
-def train_cost_model(filename, is_save, ver):
-    df = pd.read_csv(filename, index_col=0)
+def train_cost_model(input_filename, output_filename, is_save, ver):
+    df = pd.read_csv(input_filename, index_col=0)
     #print(df[:10])
     ydata = df['y(latency)']
     ydata = np.array(ydata)     # shape: (467, )
@@ -113,7 +123,7 @@ def train_cost_model(filename, is_save, ver):
         popt, pcov = curve_fit(curve_ver2, xdata, ydata)
     print('Coefficient: ', popt)
     if is_save:
-        f = open('./data/exp3-1/cost_model_param_ver' + str(ver) + '_0322.txt', 'w')
+        f = open(output_filename, 'w')
         for i in range(popt.shape[0]) :
             f.write(str(popt[i]) + ' ')
         f.close()
@@ -147,7 +157,7 @@ def test_cost_model(filename, param, ver):
     plt.plot(x_axis, x_axis)
     plt.show()
 
-def predict_with_mat_size(param, block, is_save, ver) :
+def predict_with_mat_size(param, block, filename_output, is_save, ver) :
     def _get_dataframe(filename) :
         f = open(filename, 'r')
         l = []
@@ -188,11 +198,11 @@ def predict_with_mat_size(param, block, is_save, ver) :
     plt.xlabel('Matrix size')
     plt.ylabel('Latency [sec]')
     if is_save:
-        plt.savefig('./graph/[exp3-1] Matrix_size_ver' + str(ver) +'.png')
+        plt.savefig(filename_output)
     else:
         plt.show()
 
-def predict_with_block_size(param, mat_size, block_max, filename, is_save, ver) :
+def predict_with_block_size(param, mat_size, block_max, filename_input, filename_output, is_save, ver) :
     def _get_dataframe(filename) :
         f = open(filename, 'r')
         l = []
@@ -210,7 +220,7 @@ def predict_with_block_size(param, mat_size, block_max, filename, is_save, ver) 
 
     ############## Generate test data
     X_test = []
-    for mc in range(1, block_max + 1):
+    for mc in range(4, block_max + 1):
         X_test.append([mc, mat_size])
     X_test = np.array(X_test)
     X_test = np.transpose(X_test)
@@ -220,7 +230,7 @@ def predict_with_block_size(param, mat_size, block_max, filename, is_save, ver) 
         y_pred = curve_ver2(X_test, param[0], param[1], param[2], param[3], param[4])
 
     ################# Load experiment data
-    df = _get_dataframe(filename)
+    df = _get_dataframe(filename_input)
 
     ################ Figure
     plt.figure()
@@ -231,7 +241,7 @@ def predict_with_block_size(param, mat_size, block_max, filename, is_save, ver) 
     plt.xlabel('Block size')
     plt.ylabel('Latency [sec]')
     if is_save:
-        plt.savefig('./graph/[exp3-1] Block_size_' + str(mat_size) + 'ver_' + str(ver) +'.png')
+        plt.savefig(filename_output)
     else:
         plt.show()
 
@@ -294,4 +304,17 @@ def predict_with_block_size_multiple(param, mat_size, block_max, filename_base, 
 #predict_with_block_size(param, 2048, 25, './data/exp2-2/latency_with_block_size_2048_0318.txt', is_save=1, ver=2)
 #predict_with_block_size_multiple(param, 512, 300, './data/exp3-2/[exp3-2]Mat_size_512_', iter=5, is_save=0, ver=2)
 
-preprocess_train_data(filter=1)
+##################################
+## Exp 3-3
+##################################
+#preprocess_train_data(filter=1, std=1, fig_show=False)
+#train_cost_model('./data/exp3-3/cost_model_training_data_0326.csv', './data/exp3-3/cost_model_parameter_0326.txt', is_save=1, ver=2)
+param = load_cost_model('./data/exp3-3/cost_model_parameter_0326.txt')
+#test_cost_model('./data/exp3-3/cost_model_training_data_0326.csv', param, ver=2)
+#predict_with_mat_size(param, 32, filename_output='./graph/[exp3-3] latency_prediction_mat_size_std=1.png', is_save=1, ver=2)
+predict_with_block_size(param, 512, 300, './data/exp3-2/[exp3-2]Mat_size_512_1.txt',
+                        filename_output='./graph/[exp3-3] latency_prediction_512_std=1.png', is_save=1, ver=2)
+predict_with_block_size(param, 1024, 200, './data/exp3-2/[exp3-2]Mat_size_1024_1.txt',
+                        filename_output='./graph/[exp3-3] latency_prediction_1024_std=1.png', is_save=1, ver=2)
+predict_with_block_size(param, 2048, 40, './data/exp3-3/cost_model_data_mat_size_2048.txt',
+                        filename_output='./graph/[exp3-3] latency_prediction_2048_std=1.png', is_save=1, ver=2)
